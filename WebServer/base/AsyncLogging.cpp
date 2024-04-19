@@ -11,7 +11,6 @@ AsyncLogging::AsyncLogging(std::string logFileName_, int flushInterval)
     : flushInterval_(flushInterval),
       running_(false),
       basename_(logFileName_),
-      thread_(std::bind(&AsyncLogging::threadFunc, this), "Logging"),
       mutex_(),
       cond_(mutex_),
       currentBuffer_(new Buffer),

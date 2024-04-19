@@ -3,6 +3,7 @@
 #pragma once
 #include <functional>
 #include <string>
+#include <thread>
 #include <vector>
 #include "CountDownLatch.h"
 #include "LogStream.h"
@@ -21,7 +22,7 @@ class AsyncLogging : noncopyable {
 
   void start() {
     running_ = true;
-    thread_.start();
+    thread_ = std::thread([this] { this->threadFunc(); });//移动赋值
     latch_.wait();
   }
 
@@ -39,7 +40,7 @@ class AsyncLogging : noncopyable {
   const int flushInterval_;
   bool running_;
   std::string basename_;
-  Thread thread_;
+  std::thread thread_;
   MutexLock mutex_;
   Condition cond_;
   BufferPtr currentBuffer_;
