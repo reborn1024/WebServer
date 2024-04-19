@@ -33,4 +33,8 @@ class Logger {
   static std::string logFileName_;
 };
 
+// C/C++提供了三个宏来定位程序运⾏时的错误
+// __FUNCTION__:返回当前所在的函数名
+// __FILE__:返回当前的⽂件名
+// __LINE__:当前执⾏⾏所在⾏的⾏号
 #define LOG Logger(__FILE__, __LINE__).stream()

@@ -9,7 +9,7 @@
 
 using namespace std;
 
-__thread EventLoop* t_loopInThisThread = 0;
+__thread EventLoop* t_loopInThisThread = 0; // __thread是GCC内置的线程局部存储设施，保证每个线程有自己独立实例
 
 int createEventfd() {
   int evtfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
@@ -37,8 +37,8 @@ EventLoop::EventLoop()
   }
   // pwakeupChannel_->setEvents(EPOLLIN | EPOLLET | EPOLLONESHOT);
   pwakeupChannel_->setEvents(EPOLLIN | EPOLLET);
-  pwakeupChannel_->setReadHandler(bind(&EventLoop::handleRead, this));
-  pwakeupChannel_->setConnHandler(bind(&EventLoop::handleConn, this));
+  pwakeupChannel_->setReadHandler([this](){this->handleRead();});// 绑定handleRead函数到读事件处理器
+  pwakeupChannel_->setConnHandler([this](){this->handleConn();});// 绑定handleConn函数到连接事件处理器
   poller_->epoll_add(pwakeupChannel_, 0);
 }
 
@@ -55,6 +55,7 @@ EventLoop::~EventLoop() {
   t_loopInThisThread = NULL;
 }
 
+// 唤醒EventLoop的函数，通过向eventfd写数据来触发
 void EventLoop::wakeup() {
   uint64_t one = 1;
   ssize_t n = writen(wakeupFd_, (char*)(&one), sizeof one);
@@ -63,6 +64,7 @@ void EventLoop::wakeup() {
   }
 }
 
+// 读事件处理函数，从eventfd读取数据
 void EventLoop::handleRead() {
   uint64_t one = 1;
   ssize_t n = readn(wakeupFd_, &one, sizeof one);
@@ -90,21 +92,19 @@ void EventLoop::queueInLoop(Functor&& cb) {
 }
 
 void EventLoop::loop() {
-  assert(!looping_);
-  assert(isInLoopThread());
+  assert(!looping_); // 断言未处于循环中
+  assert(isInLoopThread()); // 断言当前是在创建loop的线程中
   looping_ = true;
   quit_ = false;
-  // LOG_TRACE << "EventLoop " << this << " start looping";
-  std::vector<SP_Channel> ret;
+  std::vector<SP_Channel> ret;  // 存放活跃事件的Channel列表
   while (!quit_) {
-    // cout << "doing" << endl;
     ret.clear();
-    ret = poller_->poll();
-    eventHandling_ = true;
-    for (auto& it : ret) it->handleEvents();
-    eventHandling_ = false;
-    doPendingFunctors();
-    poller_->handleExpired();
+    ret = poller_->poll();                    // 调用Epoll的poll获取活跃事件列表
+    eventHandling_ = true;                    // 标志正在处理事件
+    for (auto& it : ret) it->handleEvents();  // 处理每个活跃事件
+    eventHandling_ = false;                   // 标志事件处理完成
+    doPendingFunctors();                      // 执行等待中的回调函数
+    poller_->handleExpired();                 // 处理超时事件
   }
   looping_ = false;
 }

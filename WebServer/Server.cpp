@@ -28,8 +28,8 @@ void Server::start() {
   eventLoopThreadPool_->start();
   // acceptChannel_->setEvents(EPOLLIN | EPOLLET | EPOLLONESHOT);
   acceptChannel_->setEvents(EPOLLIN | EPOLLET);
-  acceptChannel_->setReadHandler(bind(&Server::handNewConn, this));
-  acceptChannel_->setConnHandler(bind(&Server::handThisConn, this));
+  acceptChannel_->setReadHandler([this](){this->handNewConn();});
+  acceptChannel_->setConnHandler([this](){this->handThisConn();});
   loop_->addToPoller(acceptChannel_, 0);
   started_ = true;
 }

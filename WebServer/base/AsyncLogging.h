@@ -5,6 +5,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <mutex> // 对于 std::mutex
+#include <condition_variable> // 对于 std::condition_variable
 #include "CountDownLatch.h"
 #include "LogStream.h"
 #include "MutexLock.h"
@@ -28,7 +30,7 @@ class AsyncLogging : noncopyable {
 
   void stop() {
     running_ = false;
-    cond_.notify();
+    cond_.notify_one();
     thread_.join();
   }
 
@@ -41,8 +43,8 @@ class AsyncLogging : noncopyable {
   bool running_;
   std::string basename_;
   std::thread thread_;
-  MutexLock mutex_;
-  Condition cond_;
+  std::mutex mutex_;
+  std::condition_variable cond_;
   BufferPtr currentBuffer_;
   BufferPtr nextBuffer_;
   BufferVector buffers_;

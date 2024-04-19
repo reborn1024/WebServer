@@ -17,9 +17,9 @@ class Channel {
   typedef std::function<void()> CallBack;
   EventLoop *loop_;
   int fd_;
-  __uint32_t events_;
-  __uint32_t revents_;
-  __uint32_t lastEvents_;
+  __uint32_t events_;// Channel正在监听的事件（或者说感兴趣的时间）
+  __uint32_t revents_;// 返回的就绪事件
+  __uint32_t lastEvents_;// 上⼀此事件（主要⽤于记录如果本次事件和上次事件⼀样 就没必要调⽤ epoll_mod
 
   // 方便找到上层持有该Channel的对象
   std::weak_ptr<HttpData> holder_;
@@ -41,19 +41,17 @@ class Channel {
   int getFd();
   void setFd(int fd);
 
+  // 设置和返回持有该Channel的对象
   void setHolder(std::shared_ptr<HttpData> holder) { holder_ = holder; }
   std::shared_ptr<HttpData> getHolder() {
     std::shared_ptr<HttpData> ret(holder_.lock());
     return ret;
   }
 
+  // 设置回调
   void setReadHandler(CallBack &&readHandler) { readHandler_ = readHandler; }
-  void setWriteHandler(CallBack &&writeHandler) {
-    writeHandler_ = writeHandler;
-  }
-  void setErrorHandler(CallBack &&errorHandler) {
-    errorHandler_ = errorHandler;
-  }
+  void setWriteHandler(CallBack &&writeHandler) { writeHandler_ = writeHandler; }
+  void setErrorHandler(CallBack &&errorHandler) { errorHandler_ = errorHandler; }
   void setConnHandler(CallBack &&connHandler) { connHandler_ = connHandler; }
 
   void handleEvents() {

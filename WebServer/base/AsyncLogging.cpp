@@ -3,6 +3,7 @@
 #include "AsyncLogging.h"
 #include <assert.h>
 #include <stdio.h>
+#include <chrono>
 #include <unistd.h>
 #include <functional>
 #include "LogFile.h"
@@ -12,7 +13,7 @@ AsyncLogging::AsyncLogging(std::string logFileName_, int flushInterval)
       running_(false),
       basename_(logFileName_),
       mutex_(),
-      cond_(mutex_),
+      cond_(),
       currentBuffer_(new Buffer),
       nextBuffer_(new Buffer),
       buffers_(),
@@ -24,7 +25,7 @@ AsyncLogging::AsyncLogging(std::string logFileName_, int flushInterval)
 }
 
 void AsyncLogging::append(const char* logline, int len) {
-  MutexLockGuard lock(mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   if (currentBuffer_->avail() > len)
     currentBuffer_->append(logline, len);
   else {
@@ -35,7 +36,7 @@ void AsyncLogging::append(const char* logline, int len) {
     else
       currentBuffer_.reset(new Buffer);
     currentBuffer_->append(logline, len);
-    cond_.notify();
+    cond_.notify_one();
   }
 }
 
@@ -55,10 +56,10 @@ void AsyncLogging::threadFunc() {
     assert(buffersToWrite.empty());
 
     {
-      MutexLockGuard lock(mutex_);
+      std::unique_lock<std::mutex> lock(mutex_);
       if (buffers_.empty())  // unusual usage!
       {
-        cond_.waitForSeconds(flushInterval_);
+        cond_.wait_for(lock,std::chrono::seconds(flushInterval_));
       }
       buffers_.push_back(currentBuffer_);
       currentBuffer_.reset();

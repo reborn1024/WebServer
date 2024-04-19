@@ -180,6 +180,14 @@ void shutDownWR(int fd) {
   // printf("shutdown\n");
 }
 
+/**
+ * 初始化 TCP 服务器套接字并在指定端口上开始监听。
+ *
+ * @param port 要监听的端口号。有效范围应该在0到65535之间。
+ *
+ * @return 成功时返回一个非负的文件描述符，表示现在正在监听连接的服务器套接字。
+ *         错误时返回 -1。
+ */
 int socket_bind_listen(int port) {
   // 检查port值，取正确区间范围
   if (port < 0 || port > 65535) return -1;
@@ -199,9 +207,9 @@ int socket_bind_listen(int port) {
   // 设置服务器IP和Port，和监听描述副绑定
   struct sockaddr_in server_addr;
   bzero((char *)&server_addr, sizeof(server_addr));
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  server_addr.sin_port = htons((unsigned short)port);
+  server_addr.sin_family = AF_INET;               // 设置地址族为IPv4
+  server_addr.sin_addr.s_addr = htonl(INADDR_ANY); // 自动选择IP
+  server_addr.sin_port = htons((unsigned short)port); // 设置端口号
   if (bind(listen_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) ==
       -1) {
     close(listen_fd);
@@ -214,10 +222,5 @@ int socket_bind_listen(int port) {
     return -1;
   }
 
-  // 无效监听描述符
-  if (listen_fd == -1) {
-    close(listen_fd);
-    return -1;
-  }
   return listen_fd;
 }
