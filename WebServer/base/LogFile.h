@@ -1,8 +1,8 @@
 #pragma once
 #include <memory>
 #include <string>
+#include <mutex>
 #include "FileUtil.h"
-#include "MutexLock.h"
 #include "noncopyable.h"
 
 
@@ -24,6 +24,6 @@ class LogFile : noncopyable {
   const int flushEveryN_;
 
   int count_;
-  std::unique_ptr<MutexLock> mutex_;
+  std::mutex mutex_;
   std::unique_ptr<AppendFile> file_;
 };

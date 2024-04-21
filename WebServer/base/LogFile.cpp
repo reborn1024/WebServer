@@ -10,8 +10,7 @@ using namespace std;
 LogFile::LogFile(const string& basename, int flushEveryN)
     : basename_(basename),
       flushEveryN_(flushEveryN),
-      count_(0),
-      mutex_(new MutexLock) {
+      count_(0){
   // assert(basename.find('/') >= 0);
   file_.reset(new AppendFile(basename));
 }
@@ -19,12 +18,12 @@ LogFile::LogFile(const string& basename, int flushEveryN)
 LogFile::~LogFile() {}
 
 void LogFile::append(const char* logline, int len) {
-  MutexLockGuard lock(*mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   append_unlocked(logline, len);
 }
 
 void LogFile::flush() {
-  MutexLockGuard lock(*mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   file_->flush();
 }
 

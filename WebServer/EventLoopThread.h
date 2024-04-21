@@ -1,7 +1,7 @@
 #pragma once
 #include "EventLoop.h"
-#include "base/Condition.h"
-#include "base/MutexLock.h"
+#include <mutex>
+#include <condition_variable>
 #include "base/Thread.h"
 #include "base/noncopyable.h"
 
@@ -17,6 +17,6 @@ class EventLoopThread : noncopyable {
   EventLoop* loop_;
   bool exiting_;
   Thread thread_;
-  MutexLock mutex_;
-  Condition cond_;
+  std::mutex mutex_;
+  std::condition_variable cond_;
 };

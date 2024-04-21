@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <mutex>
 #include <memory>
 #include <vector>
 #include "Channel.h"
@@ -44,7 +45,7 @@ class EventLoop {
   shared_ptr<Channel> pwakeupChannel_;    // 管理wakeupFd_的channel
   bool quit_;                             // 是否退出事件循环的标志
   bool eventHandling_;                    // 是否正在处理事件
-  mutable MutexLock mutex_;               // 互斥锁
+  mutable std::mutex mutex_;               // 互斥锁
   std::vector<Functor> pendingFunctors_;  // 待处理的回调函数列表
   bool callingPendingFunctors_;           // 是否正在调用待处理的回调函数
   const pid_t threadId_;                  // 创建EventLoop的线程ID

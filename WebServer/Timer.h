@@ -3,7 +3,6 @@
 #include <deque>
 #include <memory>
 #include <queue>
-#include "base/MutexLock.h"
 #include "base/noncopyable.h"
 
 
@@ -45,5 +44,4 @@ class TimerManager {
   typedef std::shared_ptr<TimerNode> SPTimerNode;
   std::priority_queue<SPTimerNode, std::deque<SPTimerNode>, TimerCmp>
       timerNodeQueue;
-  // MutexLock lock;
 };

@@ -1,6 +1,6 @@
 #pragma once
-#include "Condition.h"
-#include "MutexLock.h"
+#include <mutex>
+#include <condition_variable>
 #include "noncopyable.h"
 
 // CountDownLatch的主要作用是确保Thread中传进去的func真的启动了以后
@@ -12,7 +12,7 @@ class CountDownLatch : noncopyable {
   void countDown();
 
  private:
-  mutable MutexLock mutex_;
-  Condition condition_;
+  mutable std::mutex mutex_;
+  std::condition_variable condition_;
   int count_;
 };
