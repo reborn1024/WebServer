@@ -25,6 +25,6 @@ class Epoll {
   int epollFd_; // epoll 句柄
   std::vector<epoll_event> events_;// epoll_wait()返回的活动事件都放在这个数组⾥
   std::shared_ptr<Channel> fd2chan_[MAXFDS];
-  std::shared_ptr<TcpConnection> fd2http_[MAXFDS];
+  std::shared_ptr<HttpData> fd2http_[MAXFDS];
   TimerManager timerManager_;
 };

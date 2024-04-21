@@ -10,9 +10,9 @@
 std::string getFormattedDate() ;
 
 int main(int argc, char *argv[]) {
-  int threadNum = std::thread::hardware_concurrency()/2-1;
+  int threadNum = std::thread::hardware_concurrency()*2+1;
   std::string currentDate = getFormattedDate();
-  int port = 8087;
+  int port = 8086;
   std::string logPath = "Webserver_" + currentDate + ".log";
 
   // parse args

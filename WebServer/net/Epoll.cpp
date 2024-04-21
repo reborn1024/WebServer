@@ -9,7 +9,7 @@
 #include <queue>
 #include "Util.h"
 #include "Logging.h"
-#include "TcpConnection.h"
+#include "../HttpData.h"
 
 
 #include <arpa/inet.h>
@@ -112,7 +112,7 @@ std::vector<SP_Channel> Epoll::getEventsRequest(int events_num) {
 }
 
 void Epoll::add_timer(SP_Channel request_data, int timeout) {
-  shared_ptr<TcpConnection> t = request_data->getHolder();
+  shared_ptr<HttpData> t = request_data->getHolder();
   if (t)
     timerManager_.addTimer(t, timeout);
   else

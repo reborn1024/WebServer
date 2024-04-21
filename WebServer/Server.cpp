@@ -41,8 +41,8 @@ void Server::handNewConn() {
   while ((accept_fd = accept(listenFd_, (struct sockaddr *)&client_addr,
                              &client_addr_len)) > 0) {
     EventLoop *loop = eventLoopThreadPool_->getNextLoop();
-    LOG << "New connection from " << inet_ntoa(client_addr.sin_addr) << ":"
-        << ntohs(client_addr.sin_port);
+    // LOG << "New connection from " << inet_ntoa(client_addr.sin_addr) << ":"
+    //     << ntohs(client_addr.sin_port);
     // cout << "new connection" << endl;
     // cout << inet_ntoa(client_addr.sin_addr) << endl;
     // cout << ntohs(client_addr.sin_port) << endl;
@@ -68,9 +68,9 @@ void Server::handNewConn() {
     setSocketNodelay(accept_fd);
     // setSocketNoLinger(accept_fd);
 
-    shared_ptr<TcpConnection> req_info(new HttpData(loop, accept_fd));
+    shared_ptr<HttpData> req_info(new HttpData(loop, accept_fd));
     req_info->getChannel()->setHolder(req_info);
-    loop->queueInLoop(std::bind(&TcpConnection::newEvent, req_info));
+    loop->queueInLoop(std::bind(&HttpData::newEvent, req_info));
   }
   acceptChannel_->setEvents(EPOLLIN | EPOLLET);
 }

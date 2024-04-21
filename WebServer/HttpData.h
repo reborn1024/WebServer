@@ -1,8 +1,13 @@
 #pragma once
+#include <sys/epoll.h>
+#include <unistd.h>
+#include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
-#include "TcpConnection.h"
+#include "timer/Timer.h"
 
 
 class EventLoop;
@@ -43,6 +48,7 @@ enum ParseState {
   H_END_LF
 };
 
+enum ConnectionState { H_CONNECTED = 0, H_DISCONNECTING, H_DISCONNECTED };
 
 enum HttpMethod { METHOD_POST = 1, METHOD_GET, METHOD_HEAD };
 
@@ -87,34 +93,46 @@ class MimeType {
   }
 };
 
-class HttpData : public TcpConnection {
-public:
+class HttpData : public std::enable_shared_from_this<HttpData> {
+ public:
   HttpData(EventLoop *loop, int connfd);
   ~HttpData() { close(fd_); }
   void reset();
+  void seperateTimer();
+  void linkTimer(std::shared_ptr<TimerNode> mtimer) {
+    // shared_ptr重载了bool, 但weak_ptr没有
+    timer_ = mtimer;
+  }
+  std::shared_ptr<Channel> getChannel() { return channel_; }
+  EventLoop *getLoop() { return loop_; }
+  void handleClose();
+  void newEvent();
 
-private:
+ private:
+  EventLoop *loop_;
+  std::shared_ptr<Channel> channel_;
+  int fd_;
   std::string inBuffer_;
   std::string outBuffer_;
   bool error_;
+  ConnectionState connectionState_;
 
   HttpMethod method_;
   HttpVersion HTTPVersion_;
   std::string fileName_;
   std::string path_;
-  
-  int nowReadPos_;// 当前读取位置
-  ProcessState state_;// 处理请求的状态
-  ParseState hState_;// 头部解析状态
-  bool keepAlive_;// 是否保持连接活跃
-  std::map<std::string, std::string> headers_;// 存储头部字段的映射表
+  int nowReadPos_;
+  ProcessState state_;
+  ParseState hState_;
+  bool keepAlive_;
+  std::map<std::string, std::string> headers_;
+  std::weak_ptr<TimerNode> timer_;
 
-private:
-  void handleRead() override;// 处理读操作的函数
-  void handleWrite() override; // 处理写操作的函数
-  void handleConn() override;// 处理新的连接的函数
-  void handleError(int fd, int err_num, std::string short_msg) override;// 处理错误的函数
-  URIState parseURI();// 解析URI的状态机函数
-  HeaderState parseHeaders(); // 解析头部的状态机函数
-  AnalysisState analysisRequest();// 分析请求的函数
+  void handleRead();
+  void handleWrite();
+  void handleConn();
+  void handleError(int fd, int err_num, std::string short_msg);
+  URIState parseURI();
+  HeaderState parseHeaders();
+  AnalysisState analysisRequest();
 };

@@ -2,9 +2,9 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <queue>
-#include "TcpConnection.h"
+#include "../HttpData.h"
 
-TimerNode::TimerNode(std::shared_ptr<TcpConnection> requestData, int timeout)
+TimerNode::TimerNode(std::shared_ptr<HttpData> requestData, int timeout)
     : deleted_(false), SPHttpData(requestData) {
   struct timeval now;
   gettimeofday(&now, NULL);
@@ -48,7 +48,7 @@ TimerManager::TimerManager() {}
 
 TimerManager::~TimerManager() {}
 
-void TimerManager::addTimer(std::shared_ptr<TcpConnection> SPHttpData, int timeout) {
+void TimerManager::addTimer(std::shared_ptr<HttpData> SPHttpData, int timeout) {
   SPTimerNode new_node(new TimerNode(SPHttpData, timeout));
   timerNodeQueue.push(new_node);
   SPHttpData->linkTimer(new_node);

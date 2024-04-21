@@ -5,11 +5,11 @@
 #include <queue>
 
 
-class TcpConnection;
+class HttpData;
 
 class TimerNode {
  public:
-  TimerNode(std::shared_ptr<TcpConnection> requestData, int timeout);
+  TimerNode(std::shared_ptr<HttpData> requestData, int timeout);
   ~TimerNode();
   TimerNode(TimerNode &tn);
   void update(int timeout);
@@ -22,7 +22,7 @@ class TimerNode {
  private:
   bool deleted_;
   size_t expiredTime_;
-  std::shared_ptr<TcpConnection> SPHttpData;
+  std::shared_ptr<HttpData> SPHttpData;
 };
 
 struct TimerCmp {
@@ -36,7 +36,7 @@ class TimerManager {
  public:
   TimerManager();
   ~TimerManager();
-  void addTimer(std::shared_ptr<TcpConnection> SPHttpData, int timeout);
+  void addTimer(std::shared_ptr<HttpData> SPHttpData, int timeout);
   void handleExpiredEvent();
 
  private:
