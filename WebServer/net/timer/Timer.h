@@ -3,7 +3,6 @@
 #include <deque>
 #include <memory>
 #include <queue>
-#include "base/noncopyable.h"
 
 
 class TcpConnection;

@@ -1,4 +1,4 @@
-#include "../Logging.h"
+#include "../log/Logging.h"
 #include "../Thread.h"
 #include <string>
 #include <unistd.h>

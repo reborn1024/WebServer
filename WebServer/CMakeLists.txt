@@ -1,23 +1,14 @@
 set(SRCS
-    Channel.cpp
-    Epoll.cpp
-    EventLoop.cpp
-    EventLoopThread.cpp
-    EventLoopThreadPool.cpp
-    TcpConnection.cpp
     HttpData.cpp
     Main.cpp
     Server.cpp
-    #ThreadPool.cpp
-    Timer.cpp
-    Util.cpp
 )
-include_directories(${PROJECT_SOURCE_DIR}/base)
-
-
 add_executable(WebServer ${SRCS})
-target_link_libraries(WebServer libserver_base)
+
+# 链接库，注意顺序: 先依赖，后依赖者
+target_link_libraries(WebServer libserver_net libserver_base)
 
 
 add_subdirectory(base)
 add_subdirectory(tests)
+add_subdirectory(net)

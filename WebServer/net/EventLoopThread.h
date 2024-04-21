@@ -2,8 +2,8 @@
 #include "EventLoop.h"
 #include <mutex>
 #include <condition_variable>
-#include "base/Thread.h"
-#include "base/noncopyable.h"
+#include "Thread.h"
+#include "noncopyable.h"
 
 
 class EventLoopThread : noncopyable {

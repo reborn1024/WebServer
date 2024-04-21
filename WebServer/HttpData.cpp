@@ -359,7 +359,7 @@ URIState HttpData::parseURI() {
     }
     pos = _pos;
   }
-  cout << "fileName_:" << fileName_ << endl;
+  // cout << "fileName_:" << fileName_ << endl;
   // HTTP 版本号
   pos = request_line.find("/", pos);
   if (pos < 0)
