@@ -1,5 +1,3 @@
-// @Author Lin Ya
-// @Email xxbbb@vip.qq.com
 #pragma once
 #include <sys/epoll.h>
 #include <sys/epoll.h>
@@ -10,7 +8,7 @@
 #include "Timer.h"
 
 class EventLoop;
-class HttpData;
+class TcpConnection;
 
 class Channel {
  private:
@@ -22,7 +20,7 @@ class Channel {
   __uint32_t lastEvents_;// 上⼀此事件（主要⽤于记录如果本次事件和上次事件⼀样 就没必要调⽤ epoll_mod
 
   // 方便找到上层持有该Channel的对象
-  std::weak_ptr<HttpData> holder_;
+  std::weak_ptr<TcpConnection> holder_;
 
  private:
   int parse_URI();
@@ -42,9 +40,9 @@ class Channel {
   void setFd(int fd);
 
   // 设置和返回持有该Channel的对象
-  void setHolder(std::shared_ptr<HttpData> holder) { holder_ = holder; }
-  std::shared_ptr<HttpData> getHolder() {
-    std::shared_ptr<HttpData> ret(holder_.lock());
+  void setHolder(std::shared_ptr<TcpConnection> holder) { holder_ = holder; }
+  std::shared_ptr<TcpConnection> getHolder() {
+    std::shared_ptr<TcpConnection> ret(holder_.lock());
     return ret;
   }
 

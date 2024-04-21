@@ -1,5 +1,3 @@
-// @Author Lin Ya
-// @Email xxbbb@vip.qq.com
 #include "Epoll.h"
 #include <assert.h>
 #include <errno.h>
@@ -11,6 +9,7 @@
 #include <queue>
 #include "Util.h"
 #include "base/Logging.h"
+#include "TcpConnection.h"
 
 
 #include <arpa/inet.h>
@@ -113,7 +112,7 @@ std::vector<SP_Channel> Epoll::getEventsRequest(int events_num) {
 }
 
 void Epoll::add_timer(SP_Channel request_data, int timeout) {
-  shared_ptr<HttpData> t = request_data->getHolder();
+  shared_ptr<TcpConnection> t = request_data->getHolder();
   if (t)
     timerManager_.addTimer(t, timeout);
   else

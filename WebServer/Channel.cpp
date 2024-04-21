@@ -1,5 +1,3 @@
-// @Author Lin Ya
-// @Email xxbbb@vip.qq.com
 #include "Channel.h"
 
 #include <unistd.h>
@@ -15,7 +13,7 @@
 using namespace std;
 
 Channel::Channel(EventLoop *loop)
-    : loop_(loop), events_(0), lastEvents_(0), fd_(0) {}
+    : loop_(loop),fd_(0) , events_(0), lastEvents_(0){}
 
 Channel::Channel(EventLoop *loop, int fd)
     : loop_(loop), fd_(fd), events_(0), lastEvents_(0) {}

@@ -1,11 +1,10 @@
-// @Author Lin Ya
-// @Email xxbbb@vip.qq.com
 #include "Timer.h"
 #include <sys/time.h>
 #include <unistd.h>
 #include <queue>
+#include "TcpConnection.h"
 
-TimerNode::TimerNode(std::shared_ptr<HttpData> requestData, int timeout)
+TimerNode::TimerNode(std::shared_ptr<TcpConnection> requestData, int timeout)
     : deleted_(false), SPHttpData(requestData) {
   struct timeval now;
   gettimeofday(&now, NULL);
@@ -19,7 +18,7 @@ TimerNode::~TimerNode() {
 }
 
 TimerNode::TimerNode(TimerNode &tn)
-    : SPHttpData(tn.SPHttpData), expiredTime_(0) {}
+    : expiredTime_(0) ,SPHttpData(tn.SPHttpData){}
 
 void TimerNode::update(int timeout) {
   struct timeval now;
@@ -49,7 +48,7 @@ TimerManager::TimerManager() {}
 
 TimerManager::~TimerManager() {}
 
-void TimerManager::addTimer(std::shared_ptr<HttpData> SPHttpData, int timeout) {
+void TimerManager::addTimer(std::shared_ptr<TcpConnection> SPHttpData, int timeout) {
   SPTimerNode new_node(new TimerNode(SPHttpData, timeout));
   timerNodeQueue.push(new_node);
   SPHttpData->linkTimer(new_node);

@@ -1,5 +1,3 @@
-// @Author Lin Ya
-// @Email xxbbb@vip.qq.com
 #include "Server.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -7,6 +5,7 @@
 #include <functional>
 #include "Util.h"
 #include "base/Logging.h"
+#include "HttpData.h"
 
 Server::Server(EventLoop *loop, int threadNum, int port)
     : loop_(loop),
@@ -69,9 +68,9 @@ void Server::handNewConn() {
     setSocketNodelay(accept_fd);
     // setSocketNoLinger(accept_fd);
 
-    shared_ptr<HttpData> req_info(new HttpData(loop, accept_fd));
+    shared_ptr<TcpConnection> req_info(new HttpData(loop, accept_fd));
     req_info->getChannel()->setHolder(req_info);
-    loop->queueInLoop(std::bind(&HttpData::newEvent, req_info));
+    loop->queueInLoop(std::bind(&TcpConnection::newEvent, req_info));
   }
   acceptChannel_->setEvents(EPOLLIN | EPOLLET);
 }

@@ -4,6 +4,7 @@ set(SRCS
     EventLoop.cpp
     EventLoopThread.cpp
     EventLoopThreadPool.cpp
+    TcpConnection.cpp
     HttpData.cpp
     Main.cpp
     Server.cpp

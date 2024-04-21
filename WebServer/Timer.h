@@ -1,20 +1,17 @@
-// @Author Lin Ya
-// @Email xxbbb@vip.qq.com
 #pragma once
 #include <unistd.h>
 #include <deque>
 #include <memory>
 #include <queue>
-#include "HttpData.h"
 #include "base/MutexLock.h"
 #include "base/noncopyable.h"
 
 
-class HttpData;
+class TcpConnection;
 
 class TimerNode {
  public:
-  TimerNode(std::shared_ptr<HttpData> requestData, int timeout);
+  TimerNode(std::shared_ptr<TcpConnection> requestData, int timeout);
   ~TimerNode();
   TimerNode(TimerNode &tn);
   void update(int timeout);
@@ -27,7 +24,7 @@ class TimerNode {
  private:
   bool deleted_;
   size_t expiredTime_;
-  std::shared_ptr<HttpData> SPHttpData;
+  std::shared_ptr<TcpConnection> SPHttpData;
 };
 
 struct TimerCmp {
@@ -41,7 +38,7 @@ class TimerManager {
  public:
   TimerManager();
   ~TimerManager();
-  void addTimer(std::shared_ptr<HttpData> SPHttpData, int timeout);
+  void addTimer(std::shared_ptr<TcpConnection> SPHttpData, int timeout);
   void handleExpiredEvent();
 
  private:

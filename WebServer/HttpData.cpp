@@ -1,5 +1,3 @@
-// @Author Lin Ya
-// @Email xxbbb@vip.qq.com
 #include "HttpData.h"
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -12,8 +10,8 @@
 
 using namespace std;
 
-pthread_once_t MimeType::once_control = PTHREAD_ONCE_INIT;
 std::unordered_map<std::string, std::string> MimeType::mime;
+std::once_flag MimeType::once_control;
 
 const __uint32_t DEFAULT_EVENT = EPOLLIN | EPOLLET | EPOLLONESHOT;
 const int DEFAULT_EXPIRED_TIME = 2000;              // ms
@@ -84,37 +82,9 @@ char favicon[555] = {
     'N',    'D',    '\xAE', 'B',    '\x60', '\x82',
 };
 
-void MimeType::init() {
-  mime[".html"] = "text/html";
-  mime[".avi"] = "video/x-msvideo";
-  mime[".bmp"] = "image/bmp";
-  mime[".c"] = "text/plain";
-  mime[".doc"] = "application/msword";
-  mime[".gif"] = "image/gif";
-  mime[".gz"] = "application/x-gzip";
-  mime[".htm"] = "text/html";
-  mime[".ico"] = "image/x-icon";
-  mime[".jpg"] = "image/jpeg";
-  mime[".png"] = "image/png";
-  mime[".txt"] = "text/plain";
-  mime[".mp3"] = "audio/mp3";
-  mime["default"] = "text/html";
-}
-
-std::string MimeType::getMime(const std::string &suffix) {
-  pthread_once(&once_control, MimeType::init);
-  if (mime.find(suffix) == mime.end())
-    return mime["default"];
-  else
-    return mime[suffix];
-}
-
 HttpData::HttpData(EventLoop *loop, int connfd)
-    : loop_(loop),
-      channel_(new Channel(loop, connfd)),
-      fd_(connfd),
+    : TcpConnection(loop,connfd),
       error_(false),
-      connectionState_(H_CONNECTED),
       method_(METHOD_GET),
       HTTPVersion_(HTTP_11),
       nowReadPos_(0),
@@ -143,126 +113,119 @@ void HttpData::reset() {
   }
 }
 
-void HttpData::seperateTimer() {
-  // cout << "seperateTimer" << endl;
-  if (timer_.lock()) {
-    shared_ptr<TimerNode> my_timer(timer_.lock());
-    my_timer->clearReq();
-    timer_.reset();
-  }
-}
-
 void HttpData::handleRead() {
+  // 获取当前Channel的事件
   __uint32_t &events_ = channel_->getEvents();
   do {
     bool zero = false;
+    // 读取数据到inBuffer_, zero为true表示读取到EOF
     int read_num = readn(fd_, inBuffer_, zero);
     LOG << "Request: " << inBuffer_;
+    // 如果连接状态正在断开，则清空输入缓冲区并退出循环
     if (connectionState_ == H_DISCONNECTING) {
       inBuffer_.clear();
       break;
     }
-    // cout << inBuffer_ << endl;
+    // 读数据错误处理
     if (read_num < 0) {
       perror("1");
-      error_ = true;
-      handleError(fd_, 400, "Bad Request");
+      error_ = true; // 设置错误标志
+      handleError(fd_, 400, "Bad Request"); // 处理错误
       break;
-    }
-    // else if (read_num == 0)
-    // {
-    //     error_ = true;
-    //     break;
-    // }
-    else if (zero) {
-      // 有请求出现但是读不到数据，可能是Request
-      // Aborted，或者来自网络的数据没有达到等原因
-      // 最可能是对端已经关闭了，统一按照对端已经关闭处理
-      // error_ = true;
+    } else if (zero) {
+      // 如果读取到的数据为0，通常意味着客户端关闭了连接
       connectionState_ = H_DISCONNECTING;
       if (read_num == 0) {
-        // error_ = true;
         break;
       }
-      // cout << "readnum == 0" << endl;
     }
 
+    // 状态机：解析URI
     if (state_ == STATE_PARSE_URI) {
-      URIState flag = this->parseURI();
+      URIState flag = this->parseURI(); // 解析请求URI
       if (flag == PARSE_URI_AGAIN)
         break;
       else if (flag == PARSE_URI_ERROR) {
         perror("2");
         LOG << "FD = " << fd_ << "," << inBuffer_ << "******";
         inBuffer_.clear();
-        error_ = true;
-        handleError(fd_, 400, "Bad Request");
+        error_ = true; // 设置错误标志
+        LOG << "解析URI错误";
+        handleError(fd_, 400, "Bad Request"); // 处理错误
         break;
       } else
-        state_ = STATE_PARSE_HEADERS;
+        state_ = STATE_PARSE_HEADERS; // 转到解析头部状态
     }
+
+    // 状态机：解析头部
     if (state_ == STATE_PARSE_HEADERS) {
-      HeaderState flag = this->parseHeaders();
+      HeaderState flag = this->parseHeaders(); // 解析请求头部
       if (flag == PARSE_HEADER_AGAIN)
         break;
       else if (flag == PARSE_HEADER_ERROR) {
         perror("3");
-        error_ = true;
-        handleError(fd_, 400, "Bad Request");
+        error_ = true; // 设置错误标志
+        LOG << "解析头部错误";
+        handleError(fd_, 400, "Bad Request"); // 处理错误
         break;
       }
+      
+      // 特殊处理POST方法，需要进一步接收消息体
       if (method_ == METHOD_POST) {
-        // POST方法准备
-        state_ = STATE_RECV_BODY;
+        state_ = STATE_RECV_BODY; // 转到接收消息体状态
       } else {
-        state_ = STATE_ANALYSIS;
+        state_ = STATE_ANALYSIS; // 转到分析请求状态
       }
     }
+
+    // 状态机：接收消息体
     if (state_ == STATE_RECV_BODY) {
       int content_length = -1;
+      
+      // 检查Content-Length头部是否存在
       if (headers_.find("Content-length") != headers_.end()) {
         content_length = stoi(headers_["Content-length"]);
       } else {
-        // cout << "(state_ == STATE_RECV_BODY)" << endl;
-        error_ = true;
-        handleError(fd_, 400, "Bad Request: Lack of argument (Content-length)");
+        error_ = true; // 设置错误标志
+        LOG << "接收消息体错误";
+        handleError(fd_, 400, "Bad Request: Lack of argument (Content-length)"); // 处理错误
         break;
       }
+      
+      // 如果消息体还没接收完整，等待下一次读取
       if (static_cast<int>(inBuffer_.size()) < content_length) break;
-      state_ = STATE_ANALYSIS;
+      state_ = STATE_ANALYSIS; // 转到分析请求状态
     }
+
+    // 状态机：分析请求
     if (state_ == STATE_ANALYSIS) {
-      AnalysisState flag = this->analysisRequest();
+      AnalysisState flag = this->analysisRequest(); // 分析请求
+      // 根据返回的状态进行相应处理
       if (flag == ANALYSIS_SUCCESS) {
-        state_ = STATE_FINISH;
+        state_ = STATE_FINISH; // 请求成功分析结束
         break;
       } else {
-        // cout << "state_ == STATE_ANALYSIS" << endl;
-        error_ = true;
+        error_ = true; // 设置错误标志
         break;
       }
     }
   } while (false);
-  // cout << "state_=" << state_ << endl;
+
+  // 如果没有出现错误，并且输出缓冲区有数据，则调用handleWrite()发送数据
   if (!error_) {
     if (outBuffer_.size() > 0) {
       handleWrite();
-      // events_ |= EPOLLOUT;
     }
-    // error_ may change
+
+    // 如果还没有出错，并且状态为FINISH，则重置HttpData对象以处理新请求
     if (!error_ && state_ == STATE_FINISH) {
       this->reset();
-      if (inBuffer_.size() > 0) {
-        if (connectionState_ != H_DISCONNECTING) handleRead();
+      
+      // 如果输入缓冲区还有未处理的数据，且连接未断开，则继续处理
+      if (inBuffer_.size() > 0 && connectionState_ != H_DISCONNECTING) {
+        handleRead();
       }
-
-      // if ((keepAlive_ || inBuffer_.size() > 0) && connectionState_ ==
-      // H_CONNECTED)
-      // {
-      //     this->reset();
-      //     events_ |= EPOLLIN;
-      // }
-    } else if (!error_ && connectionState_ != H_DISCONNECTED)
+    } else if (!error_ && connectionState_ != H_DISCONNECTED) // 如果连接未断开，注册EPOLLIN事件
       events_ |= EPOLLIN;
   }
 }
@@ -315,6 +278,29 @@ void HttpData::handleConn() {
     // cout << "close with errors" << endl;
     loop_->runInLoop(bind(&HttpData::handleClose, shared_from_this()));
   }
+}
+
+void HttpData::handleError(int fd, int err_num, string short_msg) {
+  short_msg = " " + short_msg;
+  char send_buff[4096];
+  string body_buff, header_buff;
+  body_buff += "<html><title>哎~出错了</title>";
+  body_buff += "<body bgcolor=\"ffffff\">";
+  body_buff += to_string(err_num) + short_msg;
+  body_buff += "<hr><em> LinYa's Web Server</em>\n</body></html>";
+
+  header_buff += "HTTP/1.1 " + to_string(err_num) + short_msg + "\r\n";
+  header_buff += "Content-Type: text/html\r\n";
+  header_buff += "Connection: Close\r\n";
+  header_buff += "Content-Length: " + to_string(body_buff.size()) + "\r\n";
+  header_buff += "Server: LinYa's Web Server\r\n";
+  ;
+  header_buff += "\r\n";
+  // 错误处理不考虑writen不完的情况
+  sprintf(send_buff, "%s", header_buff.c_str());
+  writen(fd, send_buff, strlen(send_buff));
+  sprintf(send_buff, "%s", body_buff.c_str());
+  writen(fd, send_buff, strlen(send_buff));
 }
 
 URIState HttpData::parseURI() {
@@ -373,7 +359,7 @@ URIState HttpData::parseURI() {
     }
     pos = _pos;
   }
-  // cout << "fileName_: " << fileName_ << endl;
+  cout << "fileName_:" << fileName_ << endl;
   // HTTP 版本号
   pos = request_line.find("/", pos);
   if (pos < 0)
@@ -483,32 +469,7 @@ HeaderState HttpData::parseHeaders() {
 }
 
 AnalysisState HttpData::analysisRequest() {
-  if (method_ == METHOD_POST) {
-    // ------------------------------------------------------
-    // My CV stitching handler which requires OpenCV library
-    // ------------------------------------------------------
-    // string header;
-    // header += string("HTTP/1.1 200 OK\r\n");
-    // if(headers_.find("Connection") != headers_.end() &&
-    // headers_["Connection"] == "Keep-Alive")
-    // {
-    //     keepAlive_ = true;
-    //     header += string("Connection: Keep-Alive\r\n") + "Keep-Alive:
-    //     timeout=" + to_string(DEFAULT_KEEP_ALIVE_TIME) + "\r\n";
-    // }
-    // int length = stoi(headers_["Content-length"]);
-    // vector<char> data(inBuffer_.begin(), inBuffer_.begin() + length);
-    // Mat src = imdecode(data, CV_LOAD_IMAGE_ANYDEPTH|CV_LOAD_IMAGE_ANYCOLOR);
-    // //imwrite("receive.bmp", src);
-    // Mat res = stitch(src);
-    // vector<uchar> data_encode;
-    // imencode(".png", res, data_encode);
-    // header += string("Content-length: ") + to_string(data_encode.size()) +
-    // "\r\n\r\n";
-    // outBuffer_ += header + string(data_encode.begin(), data_encode.end());
-    // inBuffer_ = inBuffer_.substr(length);
-    // return ANALYSIS_SUCCESS;
-  } else if (method_ == METHOD_GET || method_ == METHOD_HEAD) {
+  if (method_ == METHOD_GET || method_ == METHOD_HEAD) {
     string header;
     header += "HTTP/1.1 200 OK\r\n";
     if (headers_.find("Connection") != headers_.end() &&
@@ -518,6 +479,7 @@ AnalysisState HttpData::analysisRequest() {
       header += string("Connection: Keep-Alive\r\n") + "Keep-Alive: timeout=" +
                 to_string(DEFAULT_KEEP_ALIVE_TIME) + "\r\n";
     }
+    
     int dot_pos = fileName_.find('.');
     string filetype;
     if (dot_pos < 0)
@@ -534,7 +496,7 @@ AnalysisState HttpData::analysisRequest() {
     if (fileName_ == "favicon.ico") {
       header += "Content-Type: image/png\r\n";
       header += "Content-Length: " + to_string(sizeof favicon) + "\r\n";
-      header += "Server: LinYa's Web Server\r\n";
+      header += "Server: ccl's Web Server\r\n";
 
       header += "\r\n";
       outBuffer_ += header;
@@ -551,7 +513,7 @@ AnalysisState HttpData::analysisRequest() {
     }
     header += "Content-Type: " + filetype + "\r\n";
     header += "Content-Length: " + to_string(sbuf.st_size) + "\r\n";
-    header += "Server: LinYa's Web Server\r\n";
+    header += "Server: ccl's Web Server\r\n";
     // 头部结束
     header += "\r\n";
     outBuffer_ += header;
@@ -579,38 +541,4 @@ AnalysisState HttpData::analysisRequest() {
     return ANALYSIS_SUCCESS;
   }
   return ANALYSIS_ERROR;
-}
-
-void HttpData::handleError(int fd, int err_num, string short_msg) {
-  short_msg = " " + short_msg;
-  char send_buff[4096];
-  string body_buff, header_buff;
-  body_buff += "<html><title>哎~出错了</title>";
-  body_buff += "<body bgcolor=\"ffffff\">";
-  body_buff += to_string(err_num) + short_msg;
-  body_buff += "<hr><em> LinYa's Web Server</em>\n</body></html>";
-
-  header_buff += "HTTP/1.1 " + to_string(err_num) + short_msg + "\r\n";
-  header_buff += "Content-Type: text/html\r\n";
-  header_buff += "Connection: Close\r\n";
-  header_buff += "Content-Length: " + to_string(body_buff.size()) + "\r\n";
-  header_buff += "Server: LinYa's Web Server\r\n";
-  ;
-  header_buff += "\r\n";
-  // 错误处理不考虑writen不完的情况
-  sprintf(send_buff, "%s", header_buff.c_str());
-  writen(fd, send_buff, strlen(send_buff));
-  sprintf(send_buff, "%s", body_buff.c_str());
-  writen(fd, send_buff, strlen(send_buff));
-}
-
-void HttpData::handleClose() {
-  connectionState_ = H_DISCONNECTED;
-  shared_ptr<HttpData> guard(shared_from_this());
-  loop_->removeFromPoller(channel_);
-}
-
-void HttpData::newEvent() {
-  channel_->setEvents(DEFAULT_EVENT);
-  loop_->addToPoller(channel_, DEFAULT_EXPIRED_TIME);
 }

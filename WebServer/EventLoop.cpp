@@ -1,5 +1,3 @@
-// @Author Lin Ya
-// @Email xxbbb@vip.qq.com
 #include "EventLoop.h"
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
@@ -24,11 +22,11 @@ EventLoop::EventLoop()
     : looping_(false),
       poller_(new Epoll()),
       wakeupFd_(createEventfd()),
+      pwakeupChannel_(new Channel(this, wakeupFd_)),
       quit_(false),
       eventHandling_(false),
       callingPendingFunctors_(false),
-      threadId_(CurrentThread::tid()),
-      pwakeupChannel_(new Channel(this, wakeupFd_)) {
+      threadId_(CurrentThread::tid()) {
   if (t_loopInThisThread) {
     // LOG << "Another EventLoop " << t_loopInThisThread << " exists in this
     // thread " << threadId_;
