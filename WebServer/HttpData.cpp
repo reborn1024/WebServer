@@ -114,14 +114,11 @@ void HttpData::reset() {
 }
 
 void HttpData::handleRead() {
-  // 获取当前Channel的事件
   __uint32_t &events_ = channel_->getEvents();
   do {
     bool zero = false;
-    // 读取数据到inBuffer_, zero为true表示读取到EOF
     int read_num = readn(fd_, inBuffer_, zero);
-    LOG << "Request: " << inBuffer_;
-    // 如果连接状态正在断开，则清空输入缓冲区并退出循环
+    LOG << "HandleRead Request: \n" << inBuffer_;
     if (connectionState_ == H_DISCONNECTING) {
       inBuffer_.clear();
       break;
@@ -129,116 +126,146 @@ void HttpData::handleRead() {
     // 读数据错误处理
     if (read_num < 0) {
       perror("1");
-      error_ = true; // 设置错误标志
-      handleError(fd_, 400, "Bad Request"); // 处理错误
+      error_ = true;
+      handleError(fd_, 400, "Bad Request");
       break;
-    } else if (zero) {
-      // 如果读取到的数据为0，通常意味着客户端关闭了连接
+    }
+    // else if (read_num == 0)
+    // {
+    //     error_ = true;
+    //     break;
+    // }
+    else if (zero) {
+      // 有请求出现但是读不到数据，可能是Request
+      // Aborted，或者来自网络的数据没有达到等原因
+      // 最可能是对端已经关闭了，统一按照对端已经关闭处理
+      // error_ = true;
       connectionState_ = H_DISCONNECTING;
       if (read_num == 0) {
+        // error_ = true;
         break;
       }
+      // cout << "readnum == 0" << endl;
     }
 
-    // 状态机：解析URI
     if (state_ == STATE_PARSE_URI) {
-      URIState flag = this->parseURI(); // 解析请求URI
-      if (flag == PARSE_URI_AGAIN)
+      LOG << "Begin parse URI"; // 开始解析URI
+      URIState flag = this->parseURI();
+      if (flag == PARSE_URI_AGAIN){
+        LOG << "Parse URI: Need more data";
         break;
+      }
       else if (flag == PARSE_URI_ERROR) {
         perror("2");
-        LOG << "FD = " << fd_ << "," << inBuffer_ << "******";
+        LOG << "Error on FD = " << fd_ << ", errno is " << errno << ": " << strerror(errno) << "\nRequest: "<< inBuffer_;
         inBuffer_.clear();
-        error_ = true; // 设置错误标志
-        LOG << "解析URI错误";
-        handleError(fd_, 400, "Bad Request"); // 处理错误
+        error_ = true;
+        handleError(fd_, 400, "Bad Request");
         break;
       } else
-        state_ = STATE_PARSE_HEADERS; // 转到解析头部状态
+        state_ = STATE_PARSE_HEADERS;
     }
-
-    // 状态机：解析头部
     if (state_ == STATE_PARSE_HEADERS) {
-      HeaderState flag = this->parseHeaders(); // 解析请求头部
+      LOG << "Begin parse headers"; // 开始解析头部
+      HeaderState flag = this->parseHeaders();
       if (flag == PARSE_HEADER_AGAIN)
         break;
       else if (flag == PARSE_HEADER_ERROR) {
         perror("3");
-        error_ = true; // 设置错误标志
-        LOG << "解析头部错误";
-        handleError(fd_, 400, "Bad Request"); // 处理错误
+        error_ = true;
+        handleError(fd_, 400, "Bad Request");
         break;
       }
-      
-      // 特殊处理POST方法，需要进一步接收消息体
       if (method_ == METHOD_POST) {
-        state_ = STATE_RECV_BODY; // 转到接收消息体状态
+        // POST方法准备
+        state_ = STATE_RECV_BODY;
       } else {
-        state_ = STATE_ANALYSIS; // 转到分析请求状态
+        state_ = STATE_ANALYSIS;
       }
     }
-
-    // 状态机：接收消息体
     if (state_ == STATE_RECV_BODY) {
+      LOG << "Begin parsing request body"; // 开始解析请求体
       int content_length = -1;
-      
-      // 检查Content-Length头部是否存在
       if (headers_.find("Content-length") != headers_.end()) {
         content_length = stoi(headers_["Content-length"]);
       } else {
-        error_ = true; // 设置错误标志
-        LOG << "接收消息体错误";
-        handleError(fd_, 400, "Bad Request: Lack of argument (Content-length)"); // 处理错误
+        LOG << "No Content-Length header found, bad request";
+        error_ = true;
+        handleError(fd_, 400, "Bad Request: Lack of argument (Content-length)");
         break;
       }
-      
-      // 如果消息体还没接收完整，等待下一次读取
       if (static_cast<int>(inBuffer_.size()) < content_length) break;
-      state_ = STATE_ANALYSIS; // 转到分析请求状态
+      state_ = STATE_ANALYSIS;
     }
-
-    // 状态机：分析请求
     if (state_ == STATE_ANALYSIS) {
-      AnalysisState flag = this->analysisRequest(); // 分析请求
-      // 根据返回的状态进行相应处理
+      LOG << "Begin request analysis"; // 开始分析请求
+      AnalysisState flag = this->analysisRequest();
       if (flag == ANALYSIS_SUCCESS) {
-        state_ = STATE_FINISH; // 请求成功分析结束
+        state_ = STATE_FINISH;
         break;
       } else {
-        error_ = true; // 设置错误标志
+        LOG << "Request analysis failed, errno is " << errno << ": " << strerror(errno);
+        error_ = true;
         break;
       }
     }
   } while (false);
-
-  // 如果没有出现错误，并且输出缓冲区有数据，则调用handleWrite()发送数据
+  LOG << "state_=" << state_<<",error_="<<error_<<". errno is " << errno << ": " << strerror(errno);
   if (!error_) {
     if (outBuffer_.size() > 0) {
       handleWrite();
+      // events_ |= EPOLLOUT;
     }
-
-    // 如果还没有出错，并且状态为FINISH，则重置HttpData对象以处理新请求
+    // error_ may change
     if (!error_ && state_ == STATE_FINISH) {
+      LOG << "Finished handling request, preparing for reset or next read";
       this->reset();
-      
-      // 如果输入缓冲区还有未处理的数据，且连接未断开，则继续处理
-      if (inBuffer_.size() > 0 && connectionState_ != H_DISCONNECTING) {
-        handleRead();
+      if (inBuffer_.size() > 0) {
+        if (connectionState_ != H_DISCONNECTING) handleRead();
       }
-    } else if (!error_ && connectionState_ != H_DISCONNECTED) // 如果连接未断开，注册EPOLLIN事件
+
+      // if ((keepAlive_ || inBuffer_.size() > 0) && connectionState_ ==
+      // H_CONNECTED)
+      // {
+      //     this->reset();
+      //     events_ |= EPOLLIN;
+      // }
+    } else if (!error_ && connectionState_ != H_DISCONNECTED)
       events_ |= EPOLLIN;
   }
 }
 
 void HttpData::handleWrite() {
+  __uint32_t &events_ = channel_->getEvents();
   if (!error_ && connectionState_ != H_DISCONNECTED) {
-    __uint32_t &events_ = channel_->getEvents();
-    if (writen(fd_, outBuffer_) < 0) {
-      perror("writen");
-      events_ = 0;
-      error_ = true;
+    LOG << "Starting handleWrite"; // 开始写操作的日志
+    ssize_t len = writen(fd_, outBuffer_);
+    if (len < 0) {
+      if (errno == EAGAIN) {
+        // LOG << "Write operation returned EAGAIN, will retry later";
+        events_ |= EPOLLOUT; // 再次注册EPOLLOUT事件，稍后重试
+      } else {
+        perror("writen");
+        LOG << "Error in writen, writing to FD = " << fd_ << ", errno is " << errno << ": " << strerror(errno);
+        events_ = 0;
+        error_ = true;
+      }
+    } else {
+      if (outBuffer_.size() > 0) {
+        // 如果缓冲区还有数据未写完，需要再次注册EPOLLOUT事件
+        events_ |= EPOLLOUT;
+      } else {
+        // 完成写操作后的逻辑...
+        LOG << "Write complete, all data has been sent";
+      }
     }
-    if (outBuffer_.size() > 0) events_ |= EPOLLOUT;
+  } else {
+    if (error_) {
+      LOG << "HandleWrite aborted due to previous error";
+    }
+    if (connectionState_ == H_DISCONNECTED) {
+      LOG << "HandleWrite aborted because connection is disconnected";
+    }
   }
 }
 
@@ -305,10 +332,9 @@ void HttpData::handleError(int fd, int err_num, string short_msg) {
 
 URIState HttpData::parseURI() {
   string &str = inBuffer_;
-  string cop = str;
   // 读到完整的请求行再开始解析请求
   size_t pos = str.find('\r', nowReadPos_);
-  if (pos < 0) {
+  if (pos == string::npos) {
     return PARSE_URI_AGAIN;
   }
   // 去掉请求行所占的空间，节省空间
@@ -318,63 +344,70 @@ URIState HttpData::parseURI() {
   else
     str.clear();
   // Method
-  int posGet = request_line.find("GET");
-  int posPost = request_line.find("POST");
-  int posHead = request_line.find("HEAD");
+  size_t posGet = request_line.find("GET");
+  size_t posPost = request_line.find("POST");
+  size_t posHead = request_line.find("HEAD");
 
-  if (posGet >= 0) {
+  if (posGet != string::npos) {
     pos = posGet;
     method_ = METHOD_GET;
-  } else if (posPost >= 0) {
+  } else if (posPost != string::npos) {
     pos = posPost;
     method_ = METHOD_POST;
-  } else if (posHead >= 0) {
+  } else if (posHead != string::npos) {
     pos = posHead;
     method_ = METHOD_HEAD;
   } else {
+    LOG << "Invalid request method: " << request_line;
     return PARSE_URI_ERROR;
   }
 
   // filename
   pos = request_line.find("/", pos);
-  if (pos < 0) {
+  if (pos == string::npos) {
     fileName_ = "index.html";
     HTTPVersion_ = HTTP_11;
     return PARSE_URI_SUCCESS;
   } else {
     size_t _pos = request_line.find(' ', pos);
-    if (_pos < 0)
-      return PARSE_URI_ERROR;
-    else {
+    if (_pos == string::npos) {
+        // 请求行中没有找到空格，可能是 HTTP/1.0 的请求或者格式有误
+        fileName_ = request_line.substr(pos + 1);
+        HTTPVersion_ = HTTP_10;
+        return PARSE_URI_SUCCESS;
+    } else {
       if (_pos - pos > 1) {
         fileName_ = request_line.substr(pos + 1, _pos - pos - 1);
         size_t __pos = fileName_.find('?');
-        if (__pos >= 0) {
+        if (__pos != string::npos) {
           fileName_ = fileName_.substr(0, __pos);
         }
-      }
-
-      else
+      } else {
         fileName_ = "index.html";
+      }
     }
     pos = _pos;
   }
-  // cout << "fileName_:" << fileName_ << endl;
-  // HTTP 版本号
-  pos = request_line.find("/", pos);
-  if (pos < 0)
+
+  // HTTP version
+  pos = request_line.find("HTTP/", pos);
+  if (pos == string::npos) {
+    LOG << "HTTP version not found: " << request_line;
     return PARSE_URI_ERROR;
-  else {
-    if (request_line.size() - pos <= 3)
+  } else {
+    if (request_line.size() - pos <= 3) {
+      LOG << "Incomplete HTTP version: " << request_line;
       return PARSE_URI_ERROR;
-    else {
-      string ver = request_line.substr(pos + 1, 3);
-      if (ver == "1.0")
+    } else {
+      string ver = request_line.substr(pos + 5, 3);
+      if (ver == "1.0") {
         HTTPVersion_ = HTTP_10;
-      else if (ver == "1.1")
+      } else if (ver == "1.1") {
         HTTPVersion_ = HTTP_11;
-      else
+      } else {
+        LOG << "Unsupported HTTP version: " << ver<<",version: " << request_line;
         return PARSE_URI_ERROR;
+      }
     }
   }
   return PARSE_URI_SUCCESS;
@@ -469,7 +502,32 @@ HeaderState HttpData::parseHeaders() {
 }
 
 AnalysisState HttpData::analysisRequest() {
-  if (method_ == METHOD_GET || method_ == METHOD_HEAD) {
+  if (method_ == METHOD_POST) {
+    // ------------------------------------------------------
+    // My CV stitching handler which requires OpenCV library
+    // ------------------------------------------------------
+    // string header;
+    // header += string("HTTP/1.1 200 OK\r\n");
+    // if(headers_.find("Connection") != headers_.end() &&
+    // headers_["Connection"] == "Keep-Alive")
+    // {
+    //     keepAlive_ = true;
+    //     header += string("Connection: Keep-Alive\r\n") + "Keep-Alive:
+    //     timeout=" + to_string(DEFAULT_KEEP_ALIVE_TIME) + "\r\n";
+    // }
+    // int length = stoi(headers_["Content-length"]);
+    // vector<char> data(inBuffer_.begin(), inBuffer_.begin() + length);
+    // Mat src = imdecode(data, CV_LOAD_IMAGE_ANYDEPTH|CV_LOAD_IMAGE_ANYCOLOR);
+    // //imwrite("receive.bmp", src);
+    // Mat res = stitch(src);
+    // vector<uchar> data_encode;
+    // imencode(".png", res, data_encode);
+    // header += string("Content-length: ") + to_string(data_encode.size()) +
+    // "\r\n\r\n";
+    // outBuffer_ += header + string(data_encode.begin(), data_encode.end());
+    // inBuffer_ = inBuffer_.substr(length);
+    // return ANALYSIS_SUCCESS;
+  } else if (method_ == METHOD_GET || method_ == METHOD_HEAD) {
     string header;
     header += "HTTP/1.1 200 OK\r\n";
     if (headers_.find("Connection") != headers_.end() &&
