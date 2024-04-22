@@ -274,12 +274,12 @@ void HttpData::handleConn() {
       loop_->updatePoller(channel_, timeout);
     } else {
       // cout << "close normally" << endl;
-      // loop_->shutdown(channel_);
-      // loop_->runInLoop(bind(&HttpData::handleClose, shared_from_this()));
-      events_ |= (EPOLLIN | EPOLLET);
-      // events_ |= (EPOLLIN | EPOLLET | EPOLLONESHOT);
-      int timeout = (DEFAULT_KEEP_ALIVE_TIME >> 1);
-      loop_->updatePoller(channel_, timeout);
+      loop_->shutdown(channel_);
+      loop_->runInLoop(bind(&HttpData::handleClose, shared_from_this()));
+      // events_ |= (EPOLLIN | EPOLLET);
+      // // events_ |= (EPOLLIN | EPOLLET | EPOLLONESHOT);
+      // int timeout = (DEFAULT_KEEP_ALIVE_TIME >> 1);
+      // loop_->updatePoller(channel_, timeout);
     }
   } else if (!error_ && connectionState_ == H_DISCONNECTING &&
              (events_ & EPOLLOUT)) {
@@ -358,8 +358,10 @@ URIState HttpData::parseURI() {
       string ver = request_line.substr(pos + 1, 3);
       if (ver == "1.0")
         HTTPVersion_ = HTTP_10;
-      else if (ver == "1.1")
+      else if (ver == "1.1"){
+        keepAlive_=true;
         HTTPVersion_ = HTTP_11;
+      }
       else
         return PARSE_URI_ERROR;
     }
@@ -500,8 +502,11 @@ AnalysisState HttpData::analysisRequest() {
 
     // echo test
     if (fileName_ == "hello") {
-      outBuffer_ =
-          "HTTP/1.1 200 OK\r\nContent-type: text/plain\r\n\r\nHello World";
+      outBuffer_ = "HTTP/1.1 200 OK\r\n"
+                  "Content-type: text/plain\r\n"
+                  "Content-Length: 12\r\n"
+                  "\r\n"
+                  "Hello World\n";
       return ANALYSIS_SUCCESS;
     }
     if (fileName_ == "favicon.ico") {

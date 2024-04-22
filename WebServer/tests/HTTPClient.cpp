@@ -1,209 +1,126 @@
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/epoll.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
 #include <iostream>
+#include <curl/curl.h>
+#include <chrono>
+#include <thread>
+#include <vector>
+#include <cstdlib>
 
+bool VERBOSE = 0;
 
-using namespace std;
-
-#define MAXSIZE 1024
-#define IPADDRESS "127.0.0.1"
-#define SERV_PORT 8888
-#define FDSIZE 1024
-#define EPOLLEVENTS 20
-
-// static void handle_connection(int sockfd);
-// static void handle_events(int epollfd,struct epoll_event *events,int num,int
-// sockfd,char *buf);
-// static void do_read(int epollfd,int fd,int sockfd,char *buf);
-// static void do_read(int epollfd,int fd,int sockfd,char *buf);
-// static void do_write(int epollfd,int fd,int sockfd,char *buf);
-// static void add_event(int epollfd,int fd,int state);
-// static void delete_event(int epollfd,int fd,int state);
-// static void modify_event(int epollfd,int fd,int state);
-
-int setSocketNonBlocking1(int fd) {
-  int flag = fcntl(fd, F_GETFL, 0);
-  if (flag == -1) return -1;
-
-  flag |= O_NONBLOCK;
-  if (fcntl(fd, F_SETFL, flag) == -1) return -1;
-  return 0;
+static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
 }
+
+void PerformHttpGet(CURL *curl, const std::string& url, bool keepAlive) {
+    if (curl) {
+        CURLcode res;
+        std::string readBuffer;
+
+        // 设置 URL 和回调函数
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);//超时时间
+        if(VERBOSE)
+          curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);//详细输出
+
+        // 根据 keepAlive 变量的值设置长连接或短连接
+        if (!keepAlive) {
+            curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 1L); // 短连接
+        }
+
+        // 执行 HTTP GET 请求
+        res = curl_easy_perform(curl);
+
+        // 检查错误
+        if(res != CURLE_OK) {
+            std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+        } else {
+            std::cout << "Received response:" << std::endl;
+            std::cout << "------------------------------" << std::endl;
+            std::cout << readBuffer << std::endl; // 打印完整的响应报文
+            std::cout << "------------------------------" << std::endl;
+        }
+    } else {
+        std::cerr << "CURL could not be initialized." << std::endl;
+    }
+}
+
 int main(int argc, char *argv[]) {
-  int sockfd;
-  struct sockaddr_in servaddr;
-  sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  bzero(&servaddr, sizeof(servaddr));
-  servaddr.sin_family = AF_INET;
-  servaddr.sin_port = htons(SERV_PORT);
-  inet_pton(AF_INET, IPADDRESS, &servaddr.sin_addr);
-  char buff[4096];
-  buff[0] = '\0';
-  // 发空串
-  const char *p = " ";
-  if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0) {
-    setSocketNonBlocking1(sockfd);
-    cout << "1:" << endl;
-    ssize_t n = write(sockfd, p, strlen(p));
-    cout << "strlen(p) = " << strlen(p) << endl;
-    sleep(1);
-    n = read(sockfd, buff, 4096);
-    cout << "n=" << n << endl;
-    printf("%s", buff);
-    close(sockfd);
-  } else {
-    perror("err1");
+  std::string url = "127.0.0.1:8086/hello";
+  bool keepAlive = 1;
+  std::vector<int> waitTimes{0};
+  for (int i = 1; i < argc; ++i) {
+      std::string arg = argv[i];
+      if (arg == "-u" && i + 1 < argc) { // 确认后面有另一个参数
+          url = argv[++i]; // 在'-'后直接读取下一个参数作为值
+      } else if (arg == "-v") {
+        VERBOSE = true;
+      } else if (arg == "-k" && i + 1 < argc) {
+          keepAlive = std::stoi(argv[++i]) > 0;
+      } else if (arg == "-t") {
+          // 清除默认的waitTimes值，并用后续提供的数值填充
+          waitTimes.clear();
+          // 收集所有-t 后面的时间值直到遇到下一个参数或结束
+          while(i + 1 < argc && argv[i + 1][0] != '-') {
+              waitTimes.push_back(std::stoi(argv[++i]));
+          }
+      } else {
+          std::cerr << "Unsupported argument: " << arg << std::endl;
+          return 1;
+      }
   }
-  sleep(1);
 
-  // 发"GET  HTTP/1.1"
-  p = "GET  HTTP/1.1";
-  sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0) {
-    setSocketNonBlocking1(sockfd);
-    cout << "2:" << endl;
-    ssize_t n = write(sockfd, p, strlen(p));
-    cout << "strlen(p) = " << strlen(p) << endl;
-    sleep(1);
-    n = read(sockfd, buff, 4096);
-    cout << "n=" << n << endl;
-    printf("%s", buff);
-    close(sockfd);
-  } else {
-    perror("err2");
+  // 输出解析后的参数
+  std::cout << "URL: " << url << std::endl;
+  std::cout << "Keep-Alive: " << (keepAlive ? "Enabled" : "Disabled") << std::endl;
+  
+  std::cout << "Wait Times: ";
+  for (const auto& time : waitTimes) {
+      std::cout << time << " ";
   }
-  sleep(1);
+  std::cout << std::endl;
 
-  // 发
-  // GET  HTTP/1.1
-  // Host: 192.168.52.135:8888
-  // Content-Type: application/x-www-form-urlencoded
-  // Connection: Keep-Alive
-  p = "GET / HTTP/1.1\r\nHost: 192.168.52.135:8888\r\nContent-Type: "
-      "application/x-www-form-urlencoded\r\nConnection: Keep-Alive\r\n\r\n";
-  sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == 0) {
-    setSocketNonBlocking1(sockfd);
-    cout << "3:" << endl;
-    ssize_t n = write(sockfd, p, strlen(p));
-    cout << "strlen(p) = " << strlen(p) << endl;
-    sleep(1);
-    n = read(sockfd, buff, 4096);
-    cout << "n=" << n << endl;
-    printf("%s", buff);
-    close(sockfd);
+  curl_global_init(CURL_GLOBAL_ALL);
+  CURL *curl = curl_easy_init();
+
+  if (curl) {
+      std::cout << "Starting HTTP requests..." << std::endl;
+
+      for (int waitTime : waitTimes) {
+          std::cout << "Waiting for " << waitTime << " second(s) before sending the next request..." << std::endl;
+          
+          // 等待指定时间
+          std::this_thread::sleep_for(std::chrono::seconds(waitTime));
+
+          std::cout << "Sending GET request to " << url << (keepAlive ? " with" : " without") << " keep-alive." << std::endl;
+
+          // 发送GET请求
+          PerformHttpGet(curl, url, keepAlive);
+
+          if (!keepAlive) {
+              // 短连接情况下，清理并重新初始化curl对象
+              std::cout << "No keep-alive, cleaning up curl object and reinitializing..." << std::endl;
+              curl_easy_cleanup(curl);
+              curl = curl_easy_init();
+              if (!curl) {
+                  std::cerr << "Failed to reinitialize curl after cleanup." << std::endl;
+                  break;
+              }
+          }
+      }
+
+      // 清理curl资源
+      if (curl) {
+          std::cout << "Cleaning up curl resources..." << std::endl;
+          curl_easy_cleanup(curl);
+      }
   } else {
-    perror("err3");
+      std::cerr << "Curl failed to initialize!" << std::endl;
   }
+
+  curl_global_cleanup();
+  std::cout << "Finished all HTTP requests." << std::endl;
   return 0;
 }
-
-// static void handle_connection(int sockfd)
-// {
-//     int epollfd;
-//     struct epoll_event events[EPOLLEVENTS];
-//     char buf[MAXSIZE];
-//     int ret;
-//     epollfd = epoll_create(FDSIZE);
-//     add_event(epollfd,STDIN_FILENO,EPOLLIN);
-//     for ( ; ; )
-//     {
-//         ret = epoll_wait(epollfd,events,EPOLLEVENTS,-1);
-//         handle_events(epollfd,events,ret,sockfd,buf);
-//     }
-//     close(epollfd);
-// }
-
-// static void
-// handle_events(int epollfd,struct epoll_event *events,int num,int sockfd,char
-// *buf)
-// {
-//     int fd;
-//     int i;
-//     for (i = 0;i < num;i++)
-//     {
-//         fd = events[i].data.fd;
-//         if (events[i].events & EPOLLIN)
-//             do_read(epollfd,fd,sockfd,buf);
-//         else if (events[i].events & EPOLLOUT)
-//             do_write(epollfd,fd,sockfd,buf);
-//     }
-// }
-
-// static void do_read(int epollfd,int fd,int sockfd,char *buf)
-// {
-//     int nread;
-//     nread = read(fd,buf,MAXSIZE);
-//         if (nread == -1)
-//     {
-//         perror("read error:");
-//         close(fd);
-//     }
-//     else if (nread == 0)
-//     {
-//         fprintf(stderr,"server close.\n");
-//         close(fd);
-//     }
-//     else
-//     {
-//         if (fd == STDIN_FILENO)
-//             add_event(epollfd,sockfd,EPOLLOUT);
-//         else
-//         {
-//             delete_event(epollfd,sockfd,EPOLLIN);
-//             add_event(epollfd,STDOUT_FILENO,EPOLLOUT);
-//         }
-//     }
-// }
-
-// static void do_write(int epollfd,int fd,int sockfd,char *buf)
-// {
-//     int nwrite;
-//     nwrite = write(fd,buf,strlen(buf));
-//     if (nwrite == -1)
-//     {
-//         perror("write error:");
-//         close(fd);
-//     }
-//     else
-//     {
-//         if (fd == STDOUT_FILENO)
-//             delete_event(epollfd,fd,EPOLLOUT);
-//         else
-//             modify_event(epollfd,fd,EPOLLIN);
-//     }
-//     memset(buf,0,MAXSIZE);
-// }
-
-// static void add_event(int epollfd,int fd,int state)
-// {
-//     struct epoll_event ev;
-//     ev.events = state;
-//     ev.data.fd = fd;
-//     epoll_ctl(epollfd,EPOLL_CTL_ADD,fd,&ev);
-// }
-
-// static void delete_event(int epollfd,int fd,int state)
-// {
-//     struct epoll_event ev;
-//     ev.events = state;
-//     ev.data.fd = fd;
-//     epoll_ctl(epollfd,EPOLL_CTL_DEL,fd,&ev);
-// }
-
-// static void modify_event(int epollfd,int fd,int state)
-// {
-//     struct epoll_event ev;
-//     ev.events = state;
-//     ev.data.fd = fd;
-//     epoll_ctl(epollfd,EPOLL_CTL_MOD,fd,&ev);
-// }
